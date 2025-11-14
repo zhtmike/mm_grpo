@@ -2,7 +2,7 @@ python3 -m gerl.trainer.main_flowgrpo \
     algorithm.adv_estimator=flow_grpo \
     data.train_files=$HOME/dataset/ocr/train.txt \
     data.val_files=$HOME/dataset/ocr/test.txt \
-    data.train_batch_size=8 \
+    data.train_batch_size=16 \
     data.val_max_samples=16 \
     data.max_prompt_length=128 \
     data.filter_overlong_prompts=False \
@@ -39,7 +39,7 @@ python3 -m gerl.trainer.main_flowgrpo \
     trainer.logger='["console", "wandb"]' \
     trainer.project_name='flow_grpo' \
     trainer.experiment_name='sd35_m_ocr_fast' \
-    trainer.n_gpus_per_node=1 \
+    trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
     trainer.test_freq=5 \
