@@ -21,6 +21,7 @@ python3 -m gerl.trainer.main_flowgrpo \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
     actor_rollout_ref.actor.fsdp_config.model_dtype=bf16 \
+    actor_rollout_ref.actor.fsdp_config.fsdp_size=1 \
     actor_rollout_ref.actor.policy_loss.loss_mode=flow_grpo \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     actor_rollout_ref.rollout.data_parallel_size=1 \

@@ -54,7 +54,6 @@ def run_ppo(config, task_runner_class=None) -> None:
     # Check if Ray is not initialized
     if not ray.is_initialized():
         # Initialize Ray with a local cluster configuration
-        # Set environment variables in the runtime environment to control tokenizer parallelism,
         # NCCL debug level, VLLM logging level, and allow runtime LoRA updating
         # `num_cpus` specifies the number of CPU cores Ray can use, obtained from the configuration
         default_runtime_env = get_ppo_ray_runtime_env()
@@ -250,18 +249,16 @@ class TaskRunner:
         # Add a reference policy worker if KL loss or KL reward is used.
         self.add_ref_policy_worker(config, actor_rollout_cls)
 
-        tokenizer, processor = None, None
-
         # Load the reward manager for training and validation.
         reward_fn = load_reward_manager(
             config,
-            tokenizer,
+            None,
             num_examine=0,
             **config.reward_model.get("reward_kwargs", {}),
         )
         val_reward_fn = load_reward_manager(
             config,
-            tokenizer,
+            None,
             num_examine=1,
             **config.reward_model.get("reward_kwargs", {}),
         )
@@ -274,16 +271,12 @@ class TaskRunner:
         train_dataset = create_rl_dataset(
             config.data.train_files,
             config.data,
-            tokenizer,
-            processor,
             is_train=True,
             max_samples=config.data.get("train_max_samples", -1),
         )
         val_dataset = create_rl_dataset(
             config.data.val_files,
             config.data,
-            tokenizer,
-            processor,
             is_train=False,
             max_samples=config.data.get("val_max_samples", -1),
         )
@@ -309,16 +302,12 @@ class TaskRunner:
         trainer.fit()
 
 
-def create_rl_dataset(
-    data_paths, data_config, tokenizer, processor, is_train=True, max_samples: int = -1
-):
+def create_rl_dataset(data_paths, data_config, is_train=True, max_samples: int = -1):
     """Create a dataset.
 
     Arguments:
         data_paths: List of paths to data files.
         data_config: The data config.
-        tokenizer (Tokenizer): The tokenizer.
-        processor (Processor): The processor.
 
     Returns:
         dataset (Dataset): The dataset.
@@ -347,8 +336,6 @@ def create_rl_dataset(
     # Instantiate the dataset using the determined dataset class
     dataset = dataset_cls(
         data_files=data_paths,
-        tokenizer=tokenizer,
-        processor=processor,
         config=data_config,
         max_samples=max_samples,
     )

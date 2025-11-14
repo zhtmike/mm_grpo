@@ -172,22 +172,18 @@ class RayDiffusionPPOTrainer:
         Creates the train and validation dataloaders.
         """
         self.train_dataset, self.val_dataset = train_dataset, val_dataset
-        num_workers = self.config.data["dataloader_num_workers"]
+        num_workers = self.config.data.dataloader_num_workers
 
         self.train_dataloader = StatefulDataLoader(
             dataset=self.train_dataset,
-            batch_size=self.config.data.get(
-                "gen_batch_size", self.config.data.train_batch_size
-            ),
+            batch_size=self.config.data.train_batch_size,
             num_workers=num_workers,
             drop_last=True,
             collate_fn=collate_fn,
             sampler=train_sampler,
         )
 
-        val_batch_size = self.config.data.val_batch_size  # Prefer config value if set
-        if val_batch_size is None:
-            val_batch_size = len(self.val_dataset)
+        val_batch_size = len(self.val_dataset)
 
         self.val_dataloader = StatefulDataLoader(
             dataset=self.val_dataset,
@@ -377,6 +373,13 @@ class RayDiffusionPPOTrainer:
                 repeat_times=self.config.actor_rollout_ref.rollout.val_kwargs.n,
                 interleave=True,
             )
+
+            # we only do validation on rule-based rm
+            if (
+                self.config.reward_model.enable
+                and test_batch[0].non_tensor_batch["reward_model"]["style"] == "model"
+            ):
+                return {}
 
             # Store original inputs
             sample_inputs.extend(test_batch.non_tensor_batch["prompt"])

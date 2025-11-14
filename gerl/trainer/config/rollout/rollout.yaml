@@ -9,7 +9,7 @@ mode: sync
 
 # typically the same as data max prompt length
 # same as data.max_prompt_length if it exists
-prompt_length: ${oc.select:data.max_prompt_length,512}
+prompt_length: ${oc.select:data.max_prompt_length,128}
 
 # image height
 image_height: 512

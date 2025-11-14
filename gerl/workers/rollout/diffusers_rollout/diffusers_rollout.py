@@ -58,7 +58,7 @@ class DiffusersRollout(BaseRollout):
 
         self._cached_prompt_embeds: Optional[dict[str, torch.Tensor]] = None
 
-    @GPUMemoryLogger(role="diffusers rollout spmd", logger=logger)
+    @GPUMemoryLogger(role="diffusers rollout", logger=logger)
     @torch.no_grad()
     def generate_sequences(self, prompts: DataProto) -> DataProto:
         if self._cached_prompt_embeds is None:
