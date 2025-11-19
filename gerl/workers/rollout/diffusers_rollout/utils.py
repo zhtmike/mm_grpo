@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 def get_negative_prompt_embedding(
-    pipeline: DiffusionPipeline,
+    pipeline: "DiffusionPipeline",
     negative_prompt: str = "",
     max_sequence_length: int = 128,
 ) -> dict[str, torch.FloatTensor]:
