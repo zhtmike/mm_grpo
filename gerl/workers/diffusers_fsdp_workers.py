@@ -36,6 +36,13 @@ from torch.distributed.fsdp.api import (
     ShardedStateDictConfig,
     StateDictType,
 )
+
+try:
+    # for torch 2.5+
+    from torch.distributed.tensor import DTensor
+except ImportError:
+    from torch.distributed._tensor import DTensor
+
 from verl.single_controller.base import Worker
 from verl.single_controller.base.decorator import (
     Dispatch,
@@ -55,6 +62,7 @@ from verl.utils.fsdp_utils import (
     CPUOffloadPolicy,
     MixedPrecisionPolicy,
     apply_fsdp2,
+    collect_lora_params,
     fsdp2_load_full_state_dict,
     fsdp_version,
     get_fsdp_wrap_policy,
@@ -228,7 +236,7 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
                 f"ppo_mini_batch_size {self.config.actor.ppo_mini_batch_size} should be larger than 0 after "
                 f"normalization"
             )
-
+            # micro bsz
             assert (
                 self.config.actor.ppo_mini_batch_size
                 % self.config.actor.ppo_micro_batch_size_per_gpu
@@ -505,9 +513,9 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
             actor_optimizer = None
             actor_lr_scheduler = None
 
-        return (pipeline, actor_module_fsdp, actor_optimizer, actor_lr_scheduler)
+        return pipeline, actor_module_fsdp, actor_optimizer, actor_lr_scheduler
 
-    def _build_rollout(self, actor_rollout_module):
+    def _build_rollout(self):
         # 1. parse rollout and huggingface model config
         rollout_config: DiffusionRolloutConfig = omega_conf_to_dataclass(
             self.config.rollout
@@ -555,7 +563,6 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
             config=rollout_config,
             model_config=model_config,
             device_mesh=rollout_device_mesh,
-            rollout_module=actor_rollout_module,
         )
         log_gpu_memory_usage(
             f"After building {self.config.rollout.name} rollout", logger=logger
@@ -591,13 +598,66 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
 
     async def rollout_mode(self):
         """Context switch hybridengine to rollout mode."""
-        self.actor_module_fsdp.eval()
+        log_gpu_memory_usage("Before load_fsdp_model_to_gpu", logger=logger)
+        if self._is_offload_param:
+            load_fsdp_model_to_gpu(self.actor_module_fsdp)
+        log_gpu_memory_usage("After load_fsdp_model_to_gpu", logger=logger)
+
+        peft_config = None
+        peft_model = getattr(
+            self.actor_module_fsdp, "_fsdp_wrapped_module", self.actor_module_fsdp
+        )
+        if hasattr(peft_model, "peft_config"):  # LoRA
+            peft_config = peft_model.peft_config.get("default", None)
+            params = collect_lora_params(
+                module=self.actor_module_fsdp,
+                layered_summon=self.config.rollout.get("layered_summon", False),
+                base_sync_done=True,
+            )
+        else:
+            params = self.actor_module_fsdp.state_dict()
+
+        log_gpu_memory_usage("Before offload_fsdp_model_to_cpu", logger=logger)
+        if self._is_offload_param:
+            offload_fsdp_model_to_cpu(self.actor_module_fsdp)
+        log_gpu_memory_usage("After offload_fsdp_model_to_cpu", logger=logger)
+
+        if peft_config is not None:
+            per_tensor_param = (
+                params.items() if isinstance(params, dict) else params
+            )  # Fixed: handle dict case
+        else:
+            device = get_device_id()  # used when fsdp2 set cpu_offload_policy
+            per_tensor_param = (
+                (
+                    name,
+                    param.to(device, non_blocking=True).full_tensor()
+                    if isinstance(param, DTensor)
+                    else param,
+                )
+                for name, param in params.items()
+            )
+        if self.config.rollout.free_cache_engine:
+            await self.rollout.resume()
+        log_gpu_memory_usage("After resume weights", logger=logger)
+        await self.rollout.update_weights(
+            per_tensor_param,
+            peft_config=peft_config,
+            base_sync_done=self.base_sync_done,
+        )
+        log_gpu_memory_usage("After update_weights", logger=logger)
+        del params, per_tensor_param
 
         self.torch_random_states = get_torch_device().get_rng_state()
         get_torch_device().set_rng_state(self.gen_random_states)
 
     async def trainer_mode(self):
         """Context switch hybridengine to trainer mode."""
+        if self.config.rollout.free_cache_engine:
+            log_gpu_memory_usage("Before rollout offload", logger=logger)
+            await self.rollout.release()
+            log_gpu_memory_usage("After rollout offload", logger=logger)
+
         self.actor_module_fsdp.train()
 
         # restore random states
@@ -625,7 +685,7 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
 
             local_path = copy_to_local(self.config.model.path, use_shm=use_shm)
             (
-                self.actor_rollout_module,
+                self.pipeline,
                 self.actor_module_fsdp,
                 self.actor_optimizer,
                 self.actor_lr_scheduler,
@@ -664,12 +724,12 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
             self.actor = DiffusersPPOActor(
                 config=actor_cfg,
                 actor_module=self.actor_module_fsdp,
-                pipeline=self.actor_rollout_module,
+                pipeline=self.pipeline,
                 actor_optimizer=self.actor_optimizer,
             )
 
         if self._is_rollout:
-            self._build_rollout(self.actor_rollout_module)
+            self._build_rollout()
 
         if self._is_ref:
             ref_model_path = self.config.model.path
@@ -693,7 +753,7 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
             self.ref_policy = DiffusersPPOActor(
                 config=self.config.ref,
                 actor_module=self.ref_module_fsdp,
-                pipeline=self.actor_rollout_module,
+                pipeline=self.pipeline,
             )
 
         if self._is_actor:

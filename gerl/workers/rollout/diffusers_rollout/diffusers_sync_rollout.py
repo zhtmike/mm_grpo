@@ -49,18 +49,19 @@ class DiffusersSyncRollout(BaseRollout):
         config: DiffusionRolloutConfig,
         model_config: DiffusersModelConfig,
         device_mesh: DeviceMesh,
-        rollout_module: Optional["DiffusionPipeline"] = None,
     ):
         super().__init__(config, model_config, device_mesh)
         self.config = config
         self.model_config = model_config
         self.device_mesh = device_mesh
-        if rollout_module is None:
-            raise ValueError("rollout_module must be provided for DiffusersSyncRollout")
-        self.rollout_module = rollout_module
+
+        self.rollout_module = self.init_rollout_module()
         self.dtype = PrecisionType.to_dtype(config.dtype)
 
         self._cached_prompt_embeds: Optional[dict[str, torch.Tensor]] = None
+
+    def init_rollout_module(self):
+        pass
 
     @GPUMemoryLogger(role="diffusers rollout", logger=logger)
     @torch.no_grad()
