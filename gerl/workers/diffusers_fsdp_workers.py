@@ -36,13 +36,7 @@ from torch.distributed.fsdp.api import (
     ShardedStateDictConfig,
     StateDictType,
 )
-
-try:
-    # for torch 2.5+
-    from torch.distributed.tensor import DTensor
-except ImportError:
-    from torch.distributed._tensor import DTensor
-
+from torch.distributed.tensor import DTensor
 from verl.single_controller.base import Worker
 from verl.single_controller.base.decorator import (
     Dispatch,
