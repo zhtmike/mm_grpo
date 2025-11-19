@@ -31,6 +31,7 @@ from verl.workers.rollout.base import BaseRollout
 
 from ....protocol import DataProto
 from ...config import DiffusersModelConfig, DiffusionRolloutConfig
+from .utils import get_negative_prompt_embedding
 
 if TYPE_CHECKING:
     from diffusers import DiffusionPipeline
@@ -138,19 +139,15 @@ class DiffusersSyncRollout(BaseRollout):
         result.meta_info["cached_steps"] = result.batch["timesteps"].shape[1]
         return result
 
-    def cache_prompt_embeds(self, negative_prompt: str = "") -> torch.Tensor:
-        # TODO (Mike): for stable diffusion 3 only now, need to generalize later
-        prompt_embeds, _, pooled_prompt_embeds, _ = self.rollout_module.encode_prompt(
-            negative_prompt,
-            negative_prompt,
-            negative_prompt,
-            do_classifier_free_guidance=False,
+    def cache_prompt_embeds(
+        self, negative_prompt: str = ""
+    ) -> dict[str, torch.FloatTensor]:
+        embedding = get_negative_prompt_embedding(
+            self.rollout_module,
+            negative_prompt=negative_prompt,
             max_sequence_length=self.config.prompt_length,
         )
-        return {
-            "negative_prompt_embeds": prompt_embeds,
-            "negative_pooled_prompt_embeds": pooled_prompt_embeds,
-        }
+        return {k: v.to("cpu") for k, v in embedding.items()}
 
     async def resume(self, tags: list[str]):
         """Resume rollout weights or kv cache in GPU memory.
