@@ -44,3 +44,6 @@ lora_adapter_path: null
 
 # whether to use fused kernels.
 use_fused_kernels: False
+
+# whether to use torch compile.
+use_torch_compile: True

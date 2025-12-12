@@ -84,6 +84,12 @@ class DiffusersSyncRollout(BaseRollout):
         else:
             self.lora_config = None
 
+        if self.model_config.use_fused_kernels:
+            pipeline.fuse_qkv_projections()
+
+        if self.model_config.use_torch_compile:
+            self.compile(pipeline)
+
         if not self.config.free_cache_engine:
             load_to_device(pipeline, get_device_name())
         return pipeline
@@ -112,6 +118,23 @@ class DiffusersSyncRollout(BaseRollout):
         lora_config = LoraConfig(**lora_config)
         pipeline.transformer = get_peft_model(pipeline.transformer, lora_config)
         return lora_config
+
+    def compile(self, pipeline):
+        logger.info("Compiling diffusion pipeline with torch.compile...")
+        torch.set_float32_matmul_precision("high")
+        pipeline.text_encoder = torch.compile(
+            pipeline.text_encoder, fullgraph=True, mode="reduce-overhead"
+        )
+        pipeline.text_encoder_2 = torch.compile(
+            pipeline.text_encoder_2, fullgraph=True, mode="reduce-overhead"
+        )
+        pipeline.text_encoder_3 = torch.compile(
+            pipeline.text_encoder_3, fullgraph=True, mode="reduce-overhead"
+        )
+        pipeline.vae.decode = torch.compile(
+            pipeline.vae.decode, fullgraph=True, mode="reduce-overhead"
+        )
+        logger.info("Diffusion pipeline compiled.")
 
     @GPUMemoryLogger(role="diffusers rollout", logger=logger)
     @torch.no_grad()
