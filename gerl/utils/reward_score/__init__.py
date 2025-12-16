@@ -51,6 +51,12 @@ class DefaultScorer:
             extra_info (dict, optional): Additional information that might be needed for scoring. Defaults to None.
         """
         reward_fn = extra_info.get("reward_fn", []) if extra_info else []
+
+        if len(reward_fn) > 1 and data_source != "prompt":
+            raise ValueError(
+                "When using multiple reward functions, `data_source` must be 'prompt'."
+            )
+
         if len(reward_fn) > 0:
             scorers_weight = [1 / len(reward_fn)] * len(
                 reward_fn

@@ -946,7 +946,7 @@ class RayDiffusionPPOTrainer:
                                 )
                         elif not self.async_rollout_manager:
                             gen_batch_output = self._gen_next_batch(
-                                gen_batch, timing_raw, self.compute_reward_async
+                                gen_batch, {}, self.compute_reward_async
                             )
                             # Currently, non-one-step-off async policy does not really run async rollout.
                             if self.async_rollout_mode:

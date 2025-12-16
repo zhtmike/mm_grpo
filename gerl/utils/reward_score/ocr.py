@@ -63,7 +63,18 @@ class PaddleOCRScorer(Scorer):
         assert len(images) == len(prompts), (
             "Images and prompts must have the same length"
         )
-        for img, prompt in zip(images, prompts):
+
+        gts = []
+        for prompt in prompts:
+            try:
+                # in case the data_source is `prompt`, extract the text between quotes
+                text = prompt.split('"')[1]
+            except IndexError:
+                # in case the data_source is `ocr`, since the text is already extracted from dataloader, use it directly
+                text = prompt
+            gts.append(text)
+
+        for img, gt in zip(images, gts):
             # Convert image format
             if isinstance(img, Image.Image):
                 img = np.array(img)
@@ -84,20 +95,20 @@ class PaddleOCRScorer(Scorer):
                     )
 
                 recognized_text = recognized_text.replace(" ", "").lower()
-                prompt = prompt.replace(" ", "").lower()
-                if prompt in recognized_text:
+                gt = gt.replace(" ", "").lower()
+                if gt in recognized_text:
                     dist = 0
                 else:
-                    dist = distance(recognized_text, prompt)
+                    dist = distance(recognized_text, gt)
                 # Recognized many unrelated characters, only add one character penalty
-                if dist > len(prompt):
-                    dist = len(prompt)
+                if dist > len(gt):
+                    dist = len(gt)
 
             except Exception as e:
                 # Error handling (e.g., OCR parsing failure)
                 print(f"OCR processing failed: {str(e)}")
-                dist = len(prompt)  # Maximum penalty
-            reward = 1 - dist / (len(prompt))
+                dist = len(gt)  # Maximum penalty
+            reward = 1 - dist / (len(gt))
             rewards.append(reward)
 
         return rewards

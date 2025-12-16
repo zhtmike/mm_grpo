@@ -161,20 +161,30 @@ class QwenVLOCRVLLMScorer(VLLMScorer):
 
     @staticmethod
     def calculate_score(output_text: list[str], prompts: list[str]) -> list[float]:
+        gts = []
+        for prompt in prompts:
+            try:
+                # in case the data_source is `prompt`, extract the text between quotes
+                text = prompt.split('"')[1]
+            except IndexError:
+                # in case the data_source is `ocr`, since the text is already extracted from dataloader, use it directly
+                text = prompt
+            gts.append(text)
+
         scores = []
-        for text, prompt in zip(output_text, prompts):
+        for text, gt in zip(output_text, gts):
             # remove any nonvisible characters and convert to lowercase
-            prompt = re.sub(r"\s+", "", prompt).lower()
+            gt = re.sub(r"\s+", "", gt).lower()
             text = re.sub(r"\s+", "", text).lower()
-            if prompt in text:
+            if gt in text:
                 dist = 0
             else:
-                dist = Levenshtein.distance(text, prompt)
+                dist = Levenshtein.distance(text, gt)
 
             # recognized many unrelated characters, only add one character penalty
-            dist = min(dist, len(prompt))
+            dist = min(dist, len(gt))
 
-            score = 1 - dist / len(prompt)
+            score = 1 - dist / len(gt)
             scores.append(score)
 
         return scores
