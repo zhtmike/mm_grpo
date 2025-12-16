@@ -63,10 +63,10 @@ class DiffusersSyncRollout(BaseRollout):
         super().__init__(config, model_config, device_mesh)
         self.dtype = PrecisionType.to_dtype(self.config.dtype)
 
-        self.pipeline = self.init_diffusion_pipeline(self.dtype)
+        self.pipeline = self._init_diffusion_pipeline(self.dtype)
         self._cached_prompt_embeds: Optional[dict[str, torch.Tensor]] = None
 
-    def init_diffusion_pipeline(self, dtype) -> "DiffusionPipeline":
+    def _init_diffusion_pipeline(self, dtype) -> "DiffusionPipeline":
         from diffusers import DiffusionPipeline
 
         local_path = copy_to_local(
@@ -79,17 +79,21 @@ class DiffusersSyncRollout(BaseRollout):
         )
         prepare_pipeline(pipeline, dtype)
 
+        if self.model_config.use_fused_kernels:
+            pipeline.fuse_qkv_projections()
+
         if self.model_config.lora_rank > 0:
-            self.lora_config = self.inject_lora(pipeline)
-        else:
-            self.lora_config = None
+            self._inject_lora(pipeline)
+
+        if self.model_config.use_torch_compile:
+            self._compile(pipeline)
 
         if not self.config.free_cache_engine:
             load_to_device(pipeline, get_device_name())
         return pipeline
 
-    def inject_lora(self, pipeline: "DiffusionPipeline"):
-        from peft import LoraConfig, get_peft_model
+    def _inject_lora(self, pipeline: "DiffusionPipeline"):
+        from peft import LoraConfig
 
         assert self.model_config.target_modules is not None
 
@@ -109,9 +113,16 @@ class DiffusersSyncRollout(BaseRollout):
             ),
             "bias": "none",
         }
-        lora_config = LoraConfig(**lora_config)
-        pipeline.transformer = get_peft_model(pipeline.transformer, lora_config)
-        return lora_config
+        pipeline.transformer.add_adapter(LoraConfig(**lora_config))
+
+    def _compile(self, pipeline):
+        # compile the transformer modules only.
+        try:
+            pipeline.transformer = torch.compile(pipeline.transformer, fullgraph=True)
+        except Exception as e:
+            logger.warning(
+                f"Failed to torch.compile the model: {e}, rolling back to eager mode."
+            )
 
     @GPUMemoryLogger(role="diffusers rollout", logger=logger)
     @torch.no_grad()
@@ -272,9 +283,9 @@ class DiffusersSyncRollout(BaseRollout):
         Args:
             weights: A generator that yields the name of the weight tensor and the tensor itself.
         """
-        from peft import set_peft_model_state_dict
+        from .utils import load_peft_weight_from_state_dict
 
-        set_peft_model_state_dict(self.pipeline.transformer, dict(weights))
+        load_peft_weight_from_state_dict(self.pipeline.transformer, dict(weights))
 
     def update_full_weights(
         self,
@@ -285,10 +296,25 @@ class DiffusersSyncRollout(BaseRollout):
         Args:
             weights: A generator that yields the name of the weight tensor and the tensor itself.
         """
+        is_compiled = hasattr(self.pipeline.transformer, "_orig_mod")
+
         state_dict = self.pipeline.transformer.state_dict()
         for name, tensor in weights:
+            if is_compiled:
+                name = "_orig_mod." + name
+
             if name in state_dict:
-                state_dict[name].copy_(tensor)
+                if is_compiled:
+                    # to prevent recompilation, we need to use unsafe .data.copy operation
+                    if state_dict[name].shape == tensor.shape:
+                        state_dict[name].data.copy_(tensor.data)
+                    else:
+                        raise ValueError(
+                            f"Cannot load weights, shape mismatch for {name}: "
+                            f"{state_dict[name].shape} vs {tensor.shape}."
+                        )
+                else:
+                    state_dict[name].copy_(tensor)
             else:
                 logger.warning(f"Parameter {name} not found in model state_dict.")
 

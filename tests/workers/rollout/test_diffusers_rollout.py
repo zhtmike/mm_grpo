@@ -38,7 +38,7 @@ class TestDiffusersRollout:
         diffusion_config = DiffusionRolloutConfig(
             with_reward=False, free_cache_engine=False
         )
-        model_config = DiffusersModelConfig(path=model_path)
+        model_config = DiffusersModelConfig(path=model_path, use_torch_compile=False)
         self.rollout_engine = DiffusersSyncRollout(diffusion_config, model_config, None)
 
     def test_generate_sequences(self, mock_data: DataProto):
@@ -71,3 +71,15 @@ class TestDiffusersRollout:
     @pytest.mark.asyncio
     async def test_release(self):
         await self.rollout_engine.release()
+
+
+class TestDiffusersRolloutWithCompile(TestDiffusersRollout):
+    def setup_class(self):
+        model_path = os.environ.get(
+            "MODEL_PATH", "stabilityai/stable-diffusion-3.5-medium"
+        )
+        diffusion_config = DiffusionRolloutConfig(
+            with_reward=False, free_cache_engine=False
+        )
+        model_config = DiffusersModelConfig(path=model_path, use_torch_compile=True)
+        self.rollout_engine = DiffusersSyncRollout(diffusion_config, model_config, None)

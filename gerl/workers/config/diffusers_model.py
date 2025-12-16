@@ -50,7 +50,9 @@ class DiffusersModelConfig(BaseConfig):
     # path to pre-trained LoRA adapter to load for continued training
     lora_adapter_path: Optional[str] = None
 
+    # optimization related
     use_fused_kernels: bool = False
+    use_torch_compile: bool = True
 
     def __post_init__(self):
         import_external_libs(self.external_lib)

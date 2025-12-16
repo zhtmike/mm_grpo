@@ -298,8 +298,6 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
 
                 lora_adapter_path = self.config.model.get("lora_adapter_path")
                 if lora_adapter_path is not None:
-                    from peft import PeftModel
-
                     print(
                         f"Loading pre-trained LoRA adapter to {role} from: {lora_adapter_path}"
                     )
@@ -310,11 +308,9 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
                         use_shm=self.config.model.get("use_shm", False),
                     )
 
-                    actor_module = PeftModel.from_pretrained(
-                        actor_module, local_adapter_path, is_trainable=True
-                    )
+                    actor_module.load_lora_adapter(local_adapter_path)
                 else:
-                    from peft import LoraConfig, get_peft_model
+                    from peft import LoraConfig
 
                     # Convert config to regular Python types before creating PEFT model
                     lora_config = {
@@ -332,9 +328,7 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
                         ),
                         "bias": "none",
                     }
-                    actor_module = get_peft_model(
-                        actor_module, LoraConfig(**lora_config)
-                    )
+                    actor_module.add_adapter(LoraConfig(**lora_config))
 
         # TODO (Mike): add EMA Wrapper
 
