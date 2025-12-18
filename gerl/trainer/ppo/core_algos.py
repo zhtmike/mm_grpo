@@ -33,6 +33,8 @@ PolicyLossFn = Callable[
     [
         torch.Tensor,  # old_log_prob
         torch.Tensor,  # log_prob
+        torch.Tensor,  # old_prev_sample_mean
+        torch.Tensor,  # prev_sample_mean
         torch.Tensor,  # advantages
         Optional[DictConfig],  # config
     ],
@@ -212,6 +214,8 @@ def compute_flow_grpo_outcome_advantage(
 def compute_policy_loss_flow_grpo(
     old_log_prob: torch.Tensor,
     log_prob: torch.Tensor,
+    old_prev_sample_mean: torch.Tensor,
+    prev_sample_mean: torch.Tensor,
     advantages: torch.Tensor,
     config: DictConfig,
 ) -> tuple[torch.Tensor, dict[str, Any]]:
@@ -226,6 +230,10 @@ def compute_policy_loss_flow_grpo(
             Log-probabilities of actions under the old policy, shape (batch_size,).
         log_prob (torch.Tensor):
             Log-probabilities of actions under the current policy, shape (batch_size,).
+        old_prev_sample_mean (torch.Tensor):
+            Previous sample mean under the old policy, shape (batch_size, C, H, W).
+        prev_sample_mean (torch.Tensor):
+            Previous sample mean under the current policy, shape (batch_size, C, H, W).
         advantages (torch.Tensor):
             Advantage estimates for each action, shape (batch_size,).
         config: `(verl.trainer.config.ActorConfig)`:
@@ -236,7 +244,18 @@ def compute_policy_loss_flow_grpo(
         -config.clip_max,
         config.clip_max,
     )
-    ratio = torch.exp(log_prob - old_log_prob)
+
+    diff = log_prob - old_log_prob
+    if config.ratio_norm:
+        # following https://github.com/yifan123/flow_grpo/issues/192
+        ratio_mean_bias = (
+            (prev_sample_mean - old_prev_sample_mean)
+            .pow(2)
+            .mean(dim=tuple(range(1, prev_sample_mean.ndim)))
+        )
+        diff = diff + ratio_mean_bias
+    ratio = torch.exp(diff)
+
     unclipped_loss = -advantages * ratio
     clipped_loss = -advantages * torch.clamp(
         ratio,

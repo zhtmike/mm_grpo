@@ -10,8 +10,7 @@ A fast and easy-to-use library to support RL training for multi-modal generative
 
 ### Supported Algorithms
 - [x] [Flow-GRPO](https://arxiv.org/abs/2505.05470)
-- [x] Flow-GRPO-Fast
-- [ ] [Mix-GRPO](https://arxiv.org/html/2507.21802v1) (coming soon)
+- [x] [GRPO-Guard](https://arxiv.org/abs/2510.22319)
 - [ ] [DiffusionNFT](https://arxiv.org/abs/2509.16117) (coming soon)
 
 ### Supported Async Strategies

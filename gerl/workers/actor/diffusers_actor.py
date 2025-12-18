@@ -227,6 +227,7 @@ class DiffusersPPOActor(BasePPOActor):
             "pooled_prompt_embeds",
             "negative_prompt_embeds",
             "negative_pooled_prompt_embeds",
+            "prev_sample_mean",
         ]
         if self.config.use_kl_loss:
             select_keys.append("ref_prev_sample_mean")
@@ -263,6 +264,7 @@ class DiffusersPPOActor(BasePPOActor):
                             **micro_batch.non_tensor_batch,
                         }
                         old_log_prob = model_inputs["old_log_probs"]
+                        old_prev_sample_mean = model_inputs["prev_sample_mean"]
                         advantages = model_inputs["advantages"]
 
                         loss_scale_factor = 1 / self.gradient_accumulation
@@ -281,6 +283,8 @@ class DiffusersPPOActor(BasePPOActor):
                         pg_loss, pg_metrics = policy_loss_fn(
                             old_log_prob=old_log_prob[:, step],
                             log_prob=log_prob,
+                            old_prev_sample_mean=old_prev_sample_mean[:, step],
+                            prev_sample_mean=prev_sample_mean,
                             advantages=advantages,
                             config=self.config,
                         )

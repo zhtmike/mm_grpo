@@ -56,6 +56,7 @@ class DiffusionActorConfig(BaseConfig):
         shuffle_micro_batch (bool): Whether to shuffle micro-batches during training.
         clip_ratio (float): PPO clipping ratio for policy loss.
         clip_max (float): Maximum absolute value for advantage clipping.
+        ratio_norm (bool): Whether to apply importance ratio normalization.
         policy_loss (PolicyLossConfig): Configuration for policy loss computation.
         use_kl_loss (bool): Whether to use KL divergence loss.
         kl_loss_coef (float): KL divergence loss coefficient.
@@ -78,6 +79,7 @@ class DiffusionActorConfig(BaseConfig):
     shuffle_micro_batch: bool = False
     clip_ratio: float = 1e-4
     clip_max: float = 5.0
+    ratio_norm: bool = False
     policy_loss: PolicyLossConfig = field(default_factory=PolicyLossConfig)
     use_kl_loss: bool = True
     kl_loss_coef: float = 0.04
@@ -96,6 +98,11 @@ class DiffusionActorConfig(BaseConfig):
     def __post_init__(self):
         """Validate actor configuration parameters."""
         assert self.strategy != MISSING
+
+        if self.ratio_norm and self.sde_type != "cps":
+            raise ValueError(
+                "Importance ratio normalization is only supported for 'cps' SDE type currently."
+            )
 
 
 @dataclass

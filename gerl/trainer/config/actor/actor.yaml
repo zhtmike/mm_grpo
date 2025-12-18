@@ -32,6 +32,9 @@ clip_ratio: 0.0001
 # Maximum absolute value for advantage clipping
 clip_max: 5.0
 
+# Importance ratio normalization
+ratio_norm: False
+
 # policy loss config
 policy_loss:
 

@@ -8,6 +8,7 @@
 ## Supported Algorithms
 - [x] Flow-GRPO
 - [x] Flow-GRPO-Fast
+- [x] GRPO-Guard
 
 ## Quick Start
 
