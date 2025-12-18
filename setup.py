@@ -18,10 +18,17 @@ with open("README.md", "r") as f:
 
 PADDLEOCR_REQUIRES = ["paddlepaddle", "paddleocr>=3.0", "python-Levenshtein"]
 VLLM_REQUIRES = ["vllm>=0.11.1"]
+DOCS_REQUIRES = [
+    "mkdocs>=1.5",
+    "mkdocs-material",
+    "mkdocstrings[python]",
+    "pymdown-extensions",
+]
 
 extras_require = {
     "paddleocr": PADDLEOCR_REQUIRES,
     "vllm": VLLM_REQUIRES,
+    "docs": DOCS_REQUIRES,
 }
 
 setup(

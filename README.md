@@ -96,7 +96,7 @@ Typical steps to use a reward:
 
 - Model-based reward with vllm online serving.
 
-  For example, to use QwenVL-OCR reward or UnifiedReward image reward, we should [install `vllm` package](https://docs.vllm.ai/en/stable/getting_started/installation/) and launch the online serving (bash example):
+  For example, to use QwenVL-OCR reward or UnifiedReward image reward, we should install [`vllm`](https://docs.vllm.ai/en/stable/getting_started/installation/) package and launch the online serving (bash example):
 
   <details>
     <summary>Environment variable names for vllm serving</summary>
