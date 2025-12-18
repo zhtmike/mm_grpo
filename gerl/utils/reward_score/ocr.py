@@ -37,7 +37,7 @@ class PaddleOCRScorer(Scorer):
             use_doc_unwarping=False,
             use_textline_orientation=False,
             lang="en",
-            ocr_version="PP-OCRv5",
+            ocr_version="PP-OCRv4",
             device="cpu",
         )
 
