@@ -40,7 +40,9 @@ A fast and easy-to-use library to support RL training for multi-modal generative
 
 The latest version of `gerl` can be installed as follows:
 
+```bash
 pip install git+https://github.com/leibniz-csi/mm_grpo.git
+```
 
 #### Install from Local
 
