@@ -46,8 +46,9 @@ class EMAModuleWrapper:
         """
         Copy the EMA parameters to the model parameters.
         """
-        self.temp_stored_parameters = [p.detach().cpu() for p in parameters]
-        for ema_parameter, parameter in zip(self.ema_parameters, parameters):
+        parameters_list = list(parameters)
+        self.temp_stored_parameters = [p.detach().cpu() for p in parameters_list]
+        for ema_parameter, parameter in zip(self.ema_parameters, parameters_list):
             parameter.data.copy_(ema_parameter.data)
 
     @torch.no_grad()
