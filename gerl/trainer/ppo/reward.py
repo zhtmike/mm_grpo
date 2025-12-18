@@ -164,8 +164,8 @@ def load_reward_manager(
             final_compute_score = DefaultScorer()
 
     # Instantiate and return the reward manager with the specified parameters
-    if validation:
-        reward_fn = config.data.get("val_reward_fn", config.data.reward_fn)
+    if validation and config.data.val_reward_fn is not None:
+        reward_fn = config.data.val_reward_fn
     else:
         reward_fn = config.data.reward_fn
 

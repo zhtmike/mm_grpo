@@ -15,6 +15,15 @@ with open("requirements.txt", "r") as f:
 with open("README.md", "r") as f:
     long_description = f.read()
 
+
+PADDLEOCR_REQUIRES = ["paddlepaddle", "paddleocr>=3.0", "python-Levenshtein"]
+VLLM_REQUIRES = ["vllm>=0.11.1"]
+
+extras_require = {
+    "paddleocr": PADDLEOCR_REQUIRES,
+    "vllm": VLLM_REQUIRES,
+}
+
 setup(
     name="gerl",
     version=__version__,
@@ -30,10 +39,11 @@ setup(
     ),
     package_data={"gerl": ["version/version"]},
     install_requires=requirements,
+    extras_require=extras_require,
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.9",
+    python_requires=">=3.10",
 )

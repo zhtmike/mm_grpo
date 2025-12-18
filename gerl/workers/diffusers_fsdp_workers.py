@@ -824,19 +824,18 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
             load_fsdp_model_to_gpu(self.actor_module_fsdp)
 
         # Support all hardwares
-        from contextlib import nullcontext
 
         is_lora = data.meta_info.pop("is_lora", False)
-        adapter_ctx = (
-            self.actor.actor_module.disable_adapter() if is_lora else nullcontext()
-        )
         # we should always recompute old_log_probs when it is HybridEngine
         data.meta_info["micro_batch_size"] = (
             self.config.rollout.log_prob_micro_batch_size_per_gpu
         )
         # perform recompute log_prob
-        with adapter_ctx:
-            old_log_probs, prev_sample_mean = self.actor.compute_log_prob(data=data)
+        if is_lora:
+            self.actor.actor_module.disable_adapters()
+        old_log_probs, prev_sample_mean = self.actor.compute_log_prob(data=data)
+        if is_lora:
+            self.actor.actor_module.enable_adapters()
         output = DataProto.from_dict(
             tensors={
                 "old_log_probs": old_log_probs,
