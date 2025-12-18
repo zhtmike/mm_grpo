@@ -904,6 +904,8 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def save_checkpoint(self, local_path, global_step=0, max_ckpt_to_keep=None):
+        # TODO (Mike): need to save the EMA model as well
+
         from verl.utils.logger import log_with_rank
 
         # only support save and load ckpt for actor
