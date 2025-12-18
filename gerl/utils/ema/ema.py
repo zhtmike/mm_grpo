@@ -29,7 +29,6 @@ class EMAModuleWrapper:
         self.ema_parameters = [p.detach().to(device) for p in parameters]
         self.temp_stored_parameters: Optional[list[torch.Tensor]] = None
         self.decay = decay
-        self.device = device
 
     @torch.no_grad()
     def step(self, parameters: Iterable[torch.nn.Parameter]) -> None:
