@@ -599,8 +599,6 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         if peft_config is not None and self.base_sync_done:
             per_tensor_param = params.items() if isinstance(params, dict) else params
-            if swap_ema:
-                per_tensor_param = copy.deepcopy(list(per_tensor_param))
         else:
             device = get_device_id()  # used when fsdp2 set cpu_offload_policy
             per_tensor_param = (
@@ -614,6 +612,7 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
             )
 
         if swap_ema:
+            per_tensor_param = copy.deepcopy(list(per_tensor_param))
             self.ema_wrapper.copy_temp_to_model(self.actor_module_fsdp.parameters())
 
         if self.config.rollout.free_cache_engine:
@@ -1066,8 +1065,6 @@ class AsyncDiffusersActorRolloutRefWorker(DiffusersActorRolloutRefWorker):
 
         if peft_config is not None and base_sync_done:
             per_tensor_param = params.items() if isinstance(params, dict) else params
-            if swap_ema:
-                per_tensor_param = copy.deepcopy(list(per_tensor_param))
         else:
             device = get_device_id()  # used when fsdp2 set cpu_offload_policy
             per_tensor_param = (
@@ -1081,6 +1078,7 @@ class AsyncDiffusersActorRolloutRefWorker(DiffusersActorRolloutRefWorker):
             )
 
         if swap_ema:
+            per_tensor_param = copy.deepcopy(list(per_tensor_param))
             self.ema_wrapper.copy_temp_to_model(self.actor_module_fsdp.parameters())
 
         return {"params": per_tensor_param, "config": peft_config}
