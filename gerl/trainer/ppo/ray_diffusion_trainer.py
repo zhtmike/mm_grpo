@@ -359,9 +359,10 @@ class RayDiffusionPPOTrainer:
         """
         Call parameter synchronization and asynchronous sequence generation.
         """
+        swap_ema = gen_batch.meta_info.get("validate", False)
         with marked_timer("update_weight", timing_raw, color="purple"):
             # sync weights from actor to rollout if actor and rollout do not share resource pool
-            update_weights(self.actor_rollout_wg, self.rollout_wg)
+            update_weights(self.actor_rollout_wg, self.rollout_wg, swap_ema=swap_ema)
 
         # apply async reward during rollout
         if self.config.actor_rollout_ref.rollout.with_reward:

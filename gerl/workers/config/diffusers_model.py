@@ -55,8 +55,8 @@ class DiffusersModelConfig(BaseConfig):
     use_torch_compile: bool = True
 
     # ema related
-    use_ema: bool = False
-    ema_decay: float = 0.9
+    use_ema: bool = True
+    ema_decay: float = 0.95
 
     def __post_init__(self):
         import_external_libs(self.external_lib)

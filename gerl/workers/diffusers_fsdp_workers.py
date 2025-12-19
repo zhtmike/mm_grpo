@@ -16,6 +16,7 @@
 The main entry point to run the FlowGRPO algorithm
 """
 
+import copy
 import datetime
 import json
 import logging
@@ -566,14 +567,14 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
             loop = get_event_loop()
             loop.run_until_complete(self.trainer_mode())
 
-    async def rollout_mode(self):
+    async def rollout_mode(self, swap_ema: bool = False):
         """Context switch hybridengine to rollout mode."""
         log_gpu_memory_usage("Before load_fsdp_model_to_gpu", logger=logger)
         if self._is_offload_param:
             load_fsdp_model_to_gpu(self.actor_module_fsdp)
         log_gpu_memory_usage("After load_fsdp_model_to_gpu", logger=logger)
 
-        if self.config.model.use_ema:
+        if swap_ema:
             assert self.ema_wrapper is not None
             self.ema_wrapper.copy_ema_to_model(self.actor_module_fsdp.parameters())
 
@@ -598,6 +599,8 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         if peft_config is not None and self.base_sync_done:
             per_tensor_param = params.items() if isinstance(params, dict) else params
+            if swap_ema:
+                per_tensor_param = copy.deepcopy(list(per_tensor_param))
         else:
             device = get_device_id()  # used when fsdp2 set cpu_offload_policy
             per_tensor_param = (
@@ -610,7 +613,7 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
                 for name, param in params.items()
             )
 
-        if self.config.model.use_ema:
+        if swap_ema:
             self.ema_wrapper.copy_temp_to_model(self.actor_module_fsdp.parameters())
 
         if self.config.rollout.free_cache_engine:
@@ -622,7 +625,6 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
             base_sync_done=self.base_sync_done,
         )
         log_gpu_memory_usage("After update_weights", logger=logger)
-        del params, per_tensor_param
 
         self.base_sync_done = True
         # important: need to manually set the random states of each tp to be identical.
@@ -706,6 +708,7 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
                 actor_module=self.actor_module_fsdp,
                 scheduler=self.scheduler,
                 actor_optimizer=self.actor_optimizer,
+                ema_wrapper=self.ema_wrapper,
             )
 
         if self._is_rollout:
@@ -801,8 +804,11 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         timing_generate: dict[str, float] = {}
         if self._is_actor:  # For rollout only, we do not switch context.
+            swap_ema = self.config.model.use_ema and prompts.meta_info.get(
+                "validate", False
+            )
             loop = get_event_loop()
-            loop.run_until_complete(self.rollout_mode())
+            loop.run_until_complete(self.rollout_mode(swap_ema=swap_ema))
             log_gpu_memory_usage("After switch to rollout mode", logger=logger)
 
         with simple_timer("generate_sequences", timing_generate):
@@ -1031,9 +1037,11 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
 
 class AsyncDiffusersActorRolloutRefWorker(DiffusersActorRolloutRefWorker):
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
-    def get_params(self):
-        if self.config.model.use_ema:
-            assert self.ema_wrapper is not None
+    def get_params(self, swap_ema: bool = False):
+        if self.ema_wrapper is None:
+            swap_ema = False
+
+        if swap_ema:
             self.ema_wrapper.copy_ema_to_model(self.actor_module_fsdp.parameters())
 
         base_sync_done = getattr(self, "base_sync_done", True)
@@ -1058,6 +1066,8 @@ class AsyncDiffusersActorRolloutRefWorker(DiffusersActorRolloutRefWorker):
 
         if peft_config is not None and base_sync_done:
             per_tensor_param = params.items() if isinstance(params, dict) else params
+            if swap_ema:
+                per_tensor_param = copy.deepcopy(list(per_tensor_param))
         else:
             device = get_device_id()  # used when fsdp2 set cpu_offload_policy
             per_tensor_param = (
@@ -1070,7 +1080,7 @@ class AsyncDiffusersActorRolloutRefWorker(DiffusersActorRolloutRefWorker):
                 for name, param in params.items()
             )
 
-        if self.config.model.use_ema:
+        if swap_ema:
             self.ema_wrapper.copy_temp_to_model(self.actor_module_fsdp.parameters())
 
         return {"params": per_tensor_param, "config": peft_config}

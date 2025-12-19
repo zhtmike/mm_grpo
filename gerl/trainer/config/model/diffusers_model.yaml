@@ -49,8 +49,8 @@ use_fused_kernels: False
 use_torch_compile: True
 
 # whether to use EMA for model weights
-use_ema: False
+use_ema: True
 
 # EMA decay rate
-ema_decay: 0.9
+ema_decay: 0.95
 

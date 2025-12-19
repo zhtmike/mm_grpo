@@ -26,7 +26,7 @@ class EMAModuleWrapper:
         device: str = "cpu",
     ):
         super().__init__()
-        self.ema_parameters = [p.detach().to(device) for p in parameters]
+        self.ema_parameters = [p.clone().detach().to(device) for p in parameters]
         self.temp_stored_parameters: Optional[list[torch.Tensor]] = None
         self.decay = decay
 
@@ -36,9 +36,9 @@ class EMAModuleWrapper:
 
         for ema_parameter, parameter in zip(self.ema_parameters, parameters):
             if parameter.requires_grad:
-                ema_parameter.data.add_(
+                ema_parameter.add_(
                     one_minus_decay
-                    * (parameter.to(ema_parameter.device).data - ema_parameter)
+                    * (parameter.to(ema_parameter.device) - ema_parameter)
                 )
 
     @torch.no_grad()
@@ -49,7 +49,8 @@ class EMAModuleWrapper:
         parameters_list = list(parameters)
         self.temp_stored_parameters = [p.detach().cpu() for p in parameters_list]
         for ema_parameter, parameter in zip(self.ema_parameters, parameters_list):
-            parameter.data.copy_(ema_parameter.data)
+            if parameter.requires_grad:
+                parameter.copy_(ema_parameter)
 
     @torch.no_grad()
     def copy_temp_to_model(self, parameters: Iterable[torch.nn.Parameter]) -> None:
@@ -61,6 +62,7 @@ class EMAModuleWrapper:
                 "No temporary parameters stored. Call copy_ema_to_model first."
             )
         for temp_parameter, parameter in zip(self.temp_stored_parameters, parameters):
-            parameter.data.copy_(temp_parameter.data)
+            if parameter.requires_grad:
+                parameter.copy_(temp_parameter)
 
         self.temp_stored_parameters = None
