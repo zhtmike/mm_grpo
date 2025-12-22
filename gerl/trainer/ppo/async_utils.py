@@ -17,12 +17,22 @@ from typing import Any
 from verl.single_controller.ray import RayWorkerGroup
 
 
-def update_weights(actor_wg: RayWorkerGroup, rollout_wg: RayWorkerGroup):
-    """Update weights from actor worker group to rollout worker group."""
+def update_weights(
+    actor_wg: RayWorkerGroup, rollout_wg: RayWorkerGroup, swap_ema: bool = False
+):
+    """Update weights from actor worker group to rollout worker group.
+
+    Args:
+        actor_wg (RayWorkerGroup): The actor worker group.
+        rollout_wg (RayWorkerGroup): The rollout worker group.
+        swap_ema (bool): Whether to swap EMA weights. Default is False.
+    """
     if actor_wg is rollout_wg:
         return
 
-    params_with_config: tuple[dict[str, Any], ...] = actor_wg.get_params()
+    params_with_config: tuple[dict[str, Any], ...] = actor_wg.get_params(
+        swap_ema=swap_ema
+    )
     # all workers are expected to have the same parameters and configs under DP/FSDP.
     # therefore, we use the parameters from rank 0, and distribute to all rollout workers.
     rollout_wg.update_weights(params_with_config[0])

@@ -34,6 +34,7 @@ from verl.workers.actor import BasePPOActor
 
 from ...protocol import DataProto
 from ...trainer.ppo.core_algos import get_policy_loss_fn, kl_penalty
+from ...utils.ema import EMAModuleWrapper
 from ..config import DiffusionFSDPActorConfig
 
 if TYPE_CHECKING:
@@ -54,6 +55,8 @@ class DiffusersPPOActor(BasePPOActor):
         scheduler (SchedulerMixin): The scheduler for diffusion process
         actor_optimizer (Optional[torch.optim.Optimizer], optional): The optimizer for the actor.
             When None, it is Reference Policy. Defaults to None.
+        ema_wrapper (Optional[EMAModuleWrapper], optional): EMA wrapper for the actor module.
+            Defaults to None.
     """
 
     def __init__(
@@ -62,11 +65,13 @@ class DiffusersPPOActor(BasePPOActor):
         actor_module: nn.Module,
         scheduler: "SchedulerMixin",
         actor_optimizer: Optional[torch.optim.Optimizer] = None,
+        ema_wrapper: Optional[EMAModuleWrapper] = None,
     ):
         """When optimizer is None, it is Reference Policy"""
         super().__init__(config)
         self.actor_module = actor_module
         self.actor_optimizer = actor_optimizer
+        self.ema_wrapper = ema_wrapper
         self.scheduler = scheduler
         self.scheduler.set_timesteps(
             config.num_inference_steps, device=get_device_name()
@@ -319,6 +324,9 @@ class DiffusersPPOActor(BasePPOActor):
                         append_to_dict(metrics, micro_batch_metrics)
 
                 grad_norm = self._optimizer_step()
+                if self.ema_wrapper is not None:
+                    self.ema_wrapper.step(self.actor_module.parameters())
+
                 mini_batch_metrics = {"actor/grad_norm": grad_norm.detach().item()}
                 append_to_dict(metrics, mini_batch_metrics)
         self.actor_optimizer.zero_grad()

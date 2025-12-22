@@ -16,6 +16,7 @@
 The main entry point to run the FlowGRPO algorithm
 """
 
+import copy
 import datetime
 import json
 import logging
@@ -330,8 +331,6 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
                     }
                     actor_module.add_adapter(LoraConfig(**lora_config))
 
-        # TODO (Mike): add EMA Wrapper
-
         torch.distributed.barrier()
 
         if self.rank == 0:
@@ -434,6 +433,17 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
             )
         log_gpu_memory_usage(f"After {role} FSDP init", logger=logger)
 
+        if role == "actor" and self.config.model.use_ema:
+            from ..utils.ema import EMAModuleWrapper
+
+            ema_wrapper = EMAModuleWrapper(
+                parameters=actor_module_fsdp.parameters(),
+                decay=self.config.model.ema_decay,
+                device=get_device_name(),
+            )
+        else:
+            ema_wrapper = None
+
         # TODO: add more optimizer args into config
         if role == "actor" and optim_config is not None:
             from verl.utils.torch_functional import (
@@ -481,7 +491,7 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
             actor_optimizer = None
             actor_lr_scheduler = None
 
-        return actor_module_fsdp, actor_optimizer, actor_lr_scheduler
+        return actor_module_fsdp, actor_optimizer, actor_lr_scheduler, ema_wrapper
 
     def _build_scheduler(self, model_path):
         # TODO (Mike): generalize to other diffusers scheduler later
@@ -557,12 +567,16 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
             loop = get_event_loop()
             loop.run_until_complete(self.trainer_mode())
 
-    async def rollout_mode(self):
+    async def rollout_mode(self, swap_ema: bool = False):
         """Context switch hybridengine to rollout mode."""
         log_gpu_memory_usage("Before load_fsdp_model_to_gpu", logger=logger)
         if self._is_offload_param:
             load_fsdp_model_to_gpu(self.actor_module_fsdp)
         log_gpu_memory_usage("After load_fsdp_model_to_gpu", logger=logger)
+
+        if swap_ema:
+            assert self.ema_wrapper is not None
+            self.ema_wrapper.copy_ema_to_model(self.actor_module_fsdp.parameters())
 
         peft_config = None
         peft_model = getattr(
@@ -597,6 +611,10 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
                 for name, param in params.items()
             )
 
+        if swap_ema:
+            per_tensor_param = copy.deepcopy(list(per_tensor_param))
+            self.ema_wrapper.copy_temp_to_model(self.actor_module_fsdp.parameters())
+
         if self.config.rollout.free_cache_engine:
             await self.rollout.resume()
         log_gpu_memory_usage("After resume weights", logger=logger)
@@ -606,7 +624,6 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
             base_sync_done=self.base_sync_done,
         )
         log_gpu_memory_usage("After update_weights", logger=logger)
-        del params, per_tensor_param
 
         self.base_sync_done = True
         # important: need to manually set the random states of each tp to be identical.
@@ -645,21 +662,24 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
             fsdp_config = omega_conf_to_dataclass(self.config.actor.fsdp_config)
 
             local_path = copy_to_local(self.config.model.path, use_shm=use_shm)
-            self.actor_module_fsdp, self.actor_optimizer, self.actor_lr_scheduler = (
-                self._build_model_optimizer(
-                    model_path=local_path,
-                    fsdp_config=fsdp_config,
-                    optim_config=optim_config,
-                    override_model_config=override_model_config,
-                    use_fused_kernels=use_fused_kernels,
-                    enable_gradient_checkpointing=self.config.model.get(
-                        "enable_gradient_checkpointing", False
-                    ),
-                    role="actor",
-                    enable_activation_offload=self.config.model.get(
-                        "enable_activation_offload", False
-                    ),
-                )
+            (
+                self.actor_module_fsdp,
+                self.actor_optimizer,
+                self.actor_lr_scheduler,
+                self.ema_wrapper,
+            ) = self._build_model_optimizer(
+                model_path=local_path,
+                fsdp_config=fsdp_config,
+                optim_config=optim_config,
+                override_model_config=override_model_config,
+                use_fused_kernels=use_fused_kernels,
+                enable_gradient_checkpointing=self.config.model.get(
+                    "enable_gradient_checkpointing", False
+                ),
+                role="actor",
+                enable_activation_offload=self.config.model.get(
+                    "enable_activation_offload", False
+                ),
             )
 
             self.scheduler = self._build_scheduler(model_path=local_path)
@@ -687,6 +707,7 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
                 actor_module=self.actor_module_fsdp,
                 scheduler=self.scheduler,
                 actor_optimizer=self.actor_optimizer,
+                ema_wrapper=self.ema_wrapper,
             )
 
         if self._is_rollout:
@@ -782,8 +803,11 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         timing_generate: dict[str, float] = {}
         if self._is_actor:  # For rollout only, we do not switch context.
+            swap_ema = self.config.model.use_ema and prompts.meta_info.get(
+                "validate", False
+            )
             loop = get_event_loop()
-            loop.run_until_complete(self.rollout_mode())
+            loop.run_until_complete(self.rollout_mode(swap_ema=swap_ema))
             log_gpu_memory_usage("After switch to rollout mode", logger=logger)
 
         with simple_timer("generate_sequences", timing_generate):
@@ -885,6 +909,8 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def save_checkpoint(self, local_path, global_step=0, max_ckpt_to_keep=None):
+        # TODO (Mike): need to save the EMA model as well
+
         from verl.utils.logger import log_with_rank
 
         # only support save and load ckpt for actor
@@ -1010,7 +1036,13 @@ class DiffusersActorRolloutRefWorker(Worker, DistProfilerExtension):
 
 class AsyncDiffusersActorRolloutRefWorker(DiffusersActorRolloutRefWorker):
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
-    def get_params(self):
+    def get_params(self, swap_ema: bool = False):
+        if self.ema_wrapper is None:
+            swap_ema = False
+
+        if swap_ema:
+            self.ema_wrapper.copy_ema_to_model(self.actor_module_fsdp.parameters())
+
         base_sync_done = getattr(self, "base_sync_done", True)
         peft_config = None
         peft_model = getattr(
@@ -1044,6 +1076,11 @@ class AsyncDiffusersActorRolloutRefWorker(DiffusersActorRolloutRefWorker):
                 )
                 for name, param in params.items()
             )
+
+        if swap_ema:
+            per_tensor_param = copy.deepcopy(list(per_tensor_param))
+            self.ema_wrapper.copy_temp_to_model(self.actor_module_fsdp.parameters())
+
         return {"params": per_tensor_param, "config": peft_config}
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)

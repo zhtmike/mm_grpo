@@ -54,6 +54,10 @@ class DiffusersModelConfig(BaseConfig):
     use_fused_kernels: bool = False
     use_torch_compile: bool = True
 
+    # ema related
+    use_ema: bool = True
+    ema_decay: float = 0.95
+
     def __post_init__(self):
         import_external_libs(self.external_lib)
         self.local_path = copy_to_local(self.path, use_shm=self.use_shm)
